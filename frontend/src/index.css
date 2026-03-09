@@ -1,3 +1,58 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.ruler-slider {
+	height: 16px;
+	background:
+		linear-gradient(to right, var(--slider-fill) var(--slider-progress), #d1d5db var(--slider-progress)),
+		repeating-linear-gradient(
+			to right,
+			transparent 0,
+			transparent calc(10% - 1px),
+			rgba(17, 24, 39, 0.22) calc(10% - 1px),
+			rgba(17, 24, 39, 0.22) 10%
+		),
+		repeating-linear-gradient(
+			to right,
+			transparent 0,
+			transparent calc(2% - 1px),
+			rgba(17, 24, 39, 0.1) calc(2% - 1px),
+			rgba(17, 24, 39, 0.1) 2%
+		);
+	background-size: 100% 5px, 100% 12px, 100% 8px;
+	background-repeat: no-repeat;
+	background-position: center, center 1px, center 6px;
+	border-radius: 999px;
+}
+
+.ruler-slider::-webkit-slider-runnable-track {
+	height: 16px;
+	background: transparent;
+}
+
+.ruler-slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 18px;
+	height: 18px;
+	margin-top: -1px;
+	border-radius: 999px;
+	border: 2px solid #ffffff;
+	background: #1f2937;
+	box-shadow: 0 1px 5px rgba(15, 23, 42, 0.35);
+}
+
+.ruler-slider::-moz-range-track {
+	height: 16px;
+	background: transparent;
+	border: none;
+}
+
+.ruler-slider::-moz-range-thumb {
+	width: 18px;
+	height: 18px;
+	border: 2px solid #ffffff;
+	border-radius: 999px;
+	background: #1f2937;
+	box-shadow: 0 1px 5px rgba(15, 23, 42, 0.35);
+}

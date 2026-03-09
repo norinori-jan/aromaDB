@@ -1,15 +1,104 @@
-import { useState, useRef } from 'react';
-import { Upload, ImageIcon, Flower2, Save, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Upload, ImageIcon, Flower2, Save, X, Sparkles, LoaderCircle } from 'lucide-react';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 const SLIDERS = [
-  { id: 'sweetness', label: '甘さ', labelEn: 'Sweetness', emoji: '🍭', color: 'from-pink-300 to-rose-400', fillColor: '#f9a8d4' },
-  { id: 'heaviness', label: '重さ', labelEn: 'Heaviness', emoji: '⚖️', color: 'from-amber-400 to-orange-500', fillColor: '#fbbf24' },
-  { id: 'persistence', label: '持続性', labelEn: 'Persistence', emoji: '⏳', color: 'from-purple-400 to-violet-500', fillColor: '#c084fc' },
-  { id: 'floral', label: 'フローラル度', labelEn: 'Floral', emoji: '🌸', color: 'from-fuchsia-300 to-pink-500', fillColor: '#f0abfc' },
-  { id: 'freshness', label: 'フレッシュ度', labelEn: 'Freshness', emoji: '🌿', color: 'from-emerald-300 to-teal-500', fillColor: '#6ee7b7' },
+  {
+    id: 'sweetness',
+    label: '甘さ',
+    labelEn: 'Sweetness',
+    emoji: '🍭',
+    color: 'from-pink-300 to-rose-400',
+    fillColor: '#f9a8d4',
+    tags: ['core', 'impression'],
+    levels: ['ドライ', 'ややドライ', '中庸', 'やや甘い', '甘い'],
+  },
+  {
+    id: 'heaviness',
+    label: '重さ',
+    labelEn: 'Heaviness',
+    emoji: '⚖️',
+    color: 'from-amber-400 to-orange-500',
+    fillColor: '#fbbf24',
+    tags: ['core', 'impression'],
+    levels: ['軽い', 'やや軽い', '中庸', 'やや重い', '重い'],
+  },
+  {
+    id: 'persistence',
+    label: '持続性',
+    labelEn: 'Persistence',
+    emoji: '⏳',
+    color: 'from-violet-400 to-indigo-500',
+    fillColor: '#a78bfa',
+    tags: ['core', 'performance'],
+    levels: ['短い', 'やや短い', '中庸', 'やや長い', '長い'],
+  },
+  {
+    id: 'floral',
+    label: 'フローラル度',
+    labelEn: 'Floral',
+    emoji: '🌸',
+    color: 'from-fuchsia-300 to-pink-500',
+    fillColor: '#f0abfc',
+    tags: ['core', 'impression'],
+    levels: ['控えめ', '弱め', '中庸', 'やや強い', '強い'],
+  },
+  {
+    id: 'freshness',
+    label: 'フレッシュ度',
+    labelEn: 'Freshness',
+    emoji: '🌿',
+    color: 'from-emerald-300 to-teal-500',
+    fillColor: '#6ee7b7',
+    tags: ['core', 'impression'],
+    levels: ['落ち着く', 'やや落ち着く', '中庸', 'やや爽やか', '爽やか'],
+  },
+  {
+    id: 'citrus',
+    label: 'シトラス感',
+    labelEn: 'Citrus',
+    emoji: '🍋',
+    color: 'from-lime-300 to-yellow-400',
+    fillColor: '#bef264',
+    tags: ['impression'],
+    levels: ['なし', 'ごく弱い', '中庸', 'やや強い', '強い'],
+  },
+  {
+    id: 'woody',
+    label: 'ウッディ感',
+    labelEn: 'Woody',
+    emoji: '🪵',
+    color: 'from-orange-300 to-amber-500',
+    fillColor: '#fdba74',
+    tags: ['impression'],
+    levels: ['なし', 'ごく弱い', '中庸', 'やや強い', '強い'],
+  },
+  {
+    id: 'spicy',
+    label: 'スパイシー感',
+    labelEn: 'Spicy',
+    emoji: '🌶️',
+    color: 'from-red-300 to-orange-500',
+    fillColor: '#fca5a5',
+    tags: ['impression', 'performance'],
+    levels: ['なし', 'ごく弱い', '中庸', 'やや強い', '強い'],
+  },
+];
+
+const DISPLAY_MODES = [
+  { id: 'core', label: '基本5項目' },
+  { id: 'impression', label: '香調寄り' },
+  { id: 'performance', label: '持続・拡張' },
+  { id: 'all', label: 'すべて表示' },
 ];
 
 const DEFAULT_VALUES = Object.fromEntries(SLIDERS.map((s) => [s.id, 5]));
+
+const pickLevel = (slider, value) => {
+  const idx = Math.min(4, Math.max(0, Math.floor((value - 1) / 2)));
+  return slider.levels[idx];
+};
 
 export default function FragranceForm({ onSubmit }) {
   const [name, setName] = useState('');
@@ -17,24 +106,62 @@ export default function FragranceForm({ onSubmit }) {
   const [imagePreview, setImagePreview] = useState(null);
   const [values, setValues] = useState(DEFAULT_VALUES);
   const [isDragging, setIsDragging] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractError, setExtractError] = useState('');
+  const [displayMode, setDisplayMode] = useState('core');
   const fileInputRef = useRef(null);
 
-  const handleImageChange = (file) => {
+  const displayedSliders = useMemo(() => {
+    if (displayMode === 'all') return SLIDERS;
+    return SLIDERS.filter((slider) => slider.tags.includes(displayMode));
+  }, [displayMode]);
+
+  const extractNameFromImage = async (file, overwrite = false) => {
+    setExtractError('');
+    setIsExtracting(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+
+      const res = await fetch(`${API_BASE}/api/extract-name`, {
+        method: 'POST',
+        body: fd,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.detail || 'ラベル解析に失敗しました');
+      }
+
+      setName((prev) => {
+        if (!overwrite && prev.trim()) return prev;
+        return data.name || prev;
+      });
+    } catch (err) {
+      setExtractError(err.message || 'ラベル解析に失敗しました');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handleImageChange = async (file) => {
     if (!file || !file.type.startsWith('image/')) return;
     setImageFile(file);
     const reader = new FileReader();
     reader.onload = (e) => setImagePreview(e.target.result);
     reader.readAsDataURL(file);
+    await extractNameFromImage(file, false);
   };
 
-  const handleFileInput = (e) => {
-    handleImageChange(e.target.files[0]);
+  const handleFileInput = async (e) => {
+    await handleImageChange(e.target.files[0]);
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = async (e) => {
     e.preventDefault();
     setIsDragging(false);
-    handleImageChange(e.dataTransfer.files[0]);
+    await handleImageChange(e.dataTransfer.files[0]);
   };
 
   const handleDragOver = (e) => {
@@ -47,6 +174,7 @@ export default function FragranceForm({ onSubmit }) {
   const clearImage = () => {
     setImageFile(null);
     setImagePreview(null);
+    setExtractError('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -54,15 +182,37 @@ export default function FragranceForm({ onSubmit }) {
     setValues((prev) => ({ ...prev, [id]: Number(val) }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
-    const payload = { name: name.trim(), imageFile, ratings: values };
-    if (onSubmit) onSubmit(payload);
-    alert(`「${name.trim()}」を保存しました！`);
-    setName('');
-    clearImage();
-    setValues(DEFAULT_VALUES);
+
+    setIsSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('name', name.trim());
+      fd.append('ratings_json', JSON.stringify(values));
+      if (imageFile) fd.append('image', imageFile);
+
+      const res = await fetch(`${API_BASE}/api/fragrances`, {
+        method: 'POST',
+        body: fd,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.detail || '保存に失敗しました');
+      }
+
+      if (onSubmit) onSubmit(data);
+      alert(`「${name.trim()}」を保存しました！`);
+      setName('');
+      clearImage();
+      setValues(DEFAULT_VALUES);
+    } catch (err) {
+      alert(err.message || '保存に失敗しました');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -82,9 +232,22 @@ export default function FragranceForm({ onSubmit }) {
       <div className="px-6 py-6 space-y-6">
         {/* Fragrance name */}
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-            香料名 <span className="text-rose-500">*</span>
-          </label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-sm font-semibold text-gray-700">
+              香料名 <span className="text-rose-500">*</span>
+            </label>
+            {imageFile && (
+              <button
+                type="button"
+                onClick={() => extractNameFromImage(imageFile, true)}
+                disabled={isExtracting}
+                className="text-xs inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+              >
+                {isExtracting ? <LoaderCircle className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                写真から再抽出
+              </button>
+            )}
+          </div>
           <input
             type="text"
             value={name}
@@ -93,6 +256,8 @@ export default function FragranceForm({ onSubmit }) {
             required
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 transition"
           />
+          {isExtracting && <p className="text-xs text-indigo-500 mt-1">ラベルを解析中です...</p>}
+          {extractError && <p className="text-xs text-rose-500 mt-1">{extractError}</p>}
         </div>
 
         {/* Image upload */}
@@ -154,8 +319,27 @@ export default function FragranceForm({ onSubmit }) {
         {/* Rating sliders */}
         <div>
           <p className="text-sm font-semibold text-gray-700 mb-3">評価スライダー</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {DISPLAY_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => setDisplayMode(mode.id)}
+                className={`text-xs px-3 py-1 rounded-full border transition ${
+                  displayMode === mode.id
+                    ? 'bg-indigo-500 border-indigo-500 text-white'
+                    : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300'
+                }`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-500 mb-2">
+            表示を切り替えても、全項目の値は保持され保存されます。
+          </p>
           <div className="space-y-4">
-            {SLIDERS.map((slider) => (
+            {displayedSliders.map((slider) => (
               <SliderRow
                 key={slider.id}
                 slider={slider}
@@ -169,11 +353,11 @@ export default function FragranceForm({ onSubmit }) {
         {/* Submit */}
         <button
           type="submit"
-          disabled={!name.trim()}
+          disabled={!name.trim() || isSaving}
           className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-400 to-purple-500 hover:from-rose-500 hover:to-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition shadow-md"
         >
-          <Save className="w-4 h-4" />
-          保存する
+          {isSaving ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {isSaving ? '保存中...' : '保存する'}
         </button>
       </div>
     </form>
@@ -181,7 +365,7 @@ export default function FragranceForm({ onSubmit }) {
 }
 
 function SliderRow({ slider, value, onChange }) {
-  const percent = (value - 1) / 9;
+  const percent = ((value - 1) / 9) * 100;
 
   return (
     <div>
@@ -198,8 +382,9 @@ function SliderRow({ slider, value, onChange }) {
         </span>
       </div>
 
-      {/* Ruler-style track */}
-      <div className="relative">
+      <p className="text-[11px] text-gray-500 mb-1">{pickLevel(slider, value)}</p>
+
+      <div className="relative px-1">
         <input
           type="range"
           min={1}
@@ -207,15 +392,15 @@ function SliderRow({ slider, value, onChange }) {
           step={1}
           value={value}
           onChange={(e) => onChange(slider.id, e.target.value)}
-          className="w-full h-2 rounded-full appearance-none cursor-pointer accent-purple-500 bg-gray-100"
+          className="ruler-slider w-full appearance-none cursor-pointer"
           style={{
-            background: `linear-gradient(to right, ${slider.fillColor} ${percent * 100}%, #e5e7eb ${percent * 100}%)`,
+            '--slider-fill': slider.fillColor,
+            '--slider-progress': `${percent}%`,
           }}
         />
-        {/* Tick marks */}
-        <div className="flex justify-between px-0.5 mt-1">
+        <div className="flex justify-between mt-1 text-[10px] text-gray-400">
           {Array.from({ length: 10 }, (_, i) => (
-            <span key={i} className="text-[10px] text-gray-400 w-4 text-center">
+            <span key={i} className="w-4 text-center">
               {i + 1}
             </span>
           ))}
